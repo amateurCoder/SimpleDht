@@ -10,9 +10,9 @@ import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.TextView;
 
-public class OnTestClickListener implements OnClickListener {
+public class OnGlobalTestClickListener implements OnClickListener {
 
-	private static final String TAG = OnTestClickListener.class.getName();
+	private static final String TAG = OnGlobalTestClickListener.class.getName();
 	private static final int TEST_CNT = 50;
 	private static final String KEY_FIELD = "key";
 	private static final String VALUE_FIELD = "value";
@@ -22,10 +22,11 @@ public class OnTestClickListener implements OnClickListener {
 	private final Uri mUri;
 	private final ContentValues[] mContentValues;
 
-	public OnTestClickListener(TextView _tv, ContentResolver _cr) {
+	public OnGlobalTestClickListener(TextView _tv, ContentResolver _cr) {
 		mTextView = _tv;
 		mContentResolver = _cr;
-		mUri = buildUri("content", "edu.buffalo.cse.cse486586.simpledht.provider");
+		mUri = buildUri("content",
+				"edu.buffalo.cse.cse486586.simpledht.provider");
 		mContentValues = initTestValues();
 	}
 
@@ -47,12 +48,9 @@ public class OnTestClickListener implements OnClickListener {
 		return cv;
 	}
 
-	@Override
-	public void onClick(View v) {
-		new Task().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
-	}
-
 	private class Task extends AsyncTask<Void, String, Void> {
+
+		String result;
 
 		@Override
 		protected Void doInBackground(Void... params) {
@@ -62,22 +60,17 @@ public class OnTestClickListener implements OnClickListener {
 				publishProgress("Insert fail\n");
 				return null;
 			}
-			/*try {
-				Thread.sleep(100000);
-			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}*/
+
 			if (testQuery()) {
-				publishProgress("Query success\n");
+				publishProgress("Query success\n" + result);
 			} else {
 				publishProgress("Query fail\n");
 			}
-			
+
 			return null;
 		}
-		
-		protected void onProgressUpdate(String...strings) {
+
+		protected void onProgressUpdate(String... strings) {
 			mTextView.append(strings[0]);
 
 			return;
@@ -98,6 +91,7 @@ public class OnTestClickListener implements OnClickListener {
 
 		private boolean testQuery() {
 			try {
+				result = null;
 				for (int i = 0; i < TEST_CNT; i++) {
 					String key = (String) mContentValues[i].get(KEY_FIELD);
 					String val = (String) mContentValues[i].get(VALUE_FIELD);
@@ -131,6 +125,8 @@ public class OnTestClickListener implements OnClickListener {
 						Log.e(TAG, "(key, value) pairs don't match\n");
 						resultCursor.close();
 						throw new Exception();
+					} else {
+						result += returnKey + ":" + returnValue + "\n";
 					}
 
 					resultCursor.close();
@@ -141,5 +137,10 @@ public class OnTestClickListener implements OnClickListener {
 
 			return true;
 		}
+	}
+
+	@Override
+	public void onClick(View v) {
+		new Task().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
 	}
 }
