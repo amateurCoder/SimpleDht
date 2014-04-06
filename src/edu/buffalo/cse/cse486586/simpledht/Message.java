@@ -14,6 +14,25 @@ public class Message implements Serializable {
 	MessageType messageType;
 	String senderPort;
 	
+	String predecessor;
+	String successor;
+	
+	public String getPredecessor() {
+		return predecessor;
+	}
+
+	public void setPredecessor(String predecessor) {
+		this.predecessor = predecessor;
+	}
+
+	public String getSuccessor() {
+		return successor;
+	}
+
+	public void setSuccessor(String successor) {
+		this.successor = successor;
+	}
+
 	String responsePort;
 
 	public String getResponsePort() {

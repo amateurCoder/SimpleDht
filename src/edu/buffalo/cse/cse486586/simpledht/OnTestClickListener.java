@@ -13,7 +13,7 @@ import android.widget.TextView;
 public class OnTestClickListener implements OnClickListener {
 
 	private static final String TAG = OnTestClickListener.class.getName();
-	private static final int TEST_CNT = 50;
+	private static final int TEST_CNT = 50; 
 	private static final String KEY_FIELD = "key";
 	private static final String VALUE_FIELD = "value";
 
@@ -62,12 +62,6 @@ public class OnTestClickListener implements OnClickListener {
 				publishProgress("Insert fail\n");
 				return null;
 			}
-			/*try {
-				Thread.sleep(100000);
-			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}*/
 			if (testQuery()) {
 				publishProgress("Query success\n");
 			} else {
@@ -101,7 +95,7 @@ public class OnTestClickListener implements OnClickListener {
 				for (int i = 0; i < TEST_CNT; i++) {
 					String key = (String) mContentValues[i].get(KEY_FIELD);
 					String val = (String) mContentValues[i].get(VALUE_FIELD);
-
+					Log.v(TAG, "Sending query from test:" + key + ":" + val);
 					Cursor resultCursor = mContentResolver.query(mUri, null,
 							key, null, null);
 					if (resultCursor == null) {
