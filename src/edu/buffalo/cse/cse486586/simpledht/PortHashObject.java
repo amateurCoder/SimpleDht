@@ -1,7 +1,13 @@
 package edu.buffalo.cse.cse486586.simpledht;
 
-public class PortHashObject implements Comparable<PortHashObject> {
+import java.io.Serializable;
 
+public class PortHashObject implements Comparable<PortHashObject>, Serializable {
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
 	private String portNumber;
 	private String hashedPortNumber;
 

@@ -96,7 +96,8 @@ public class SimpleDhtProvider extends ContentProvider {
 				e1.printStackTrace();
 			}
 			// To handle the wrapped DHT
-			if (portStr.equals("5562")) {
+			// if (portStr.equals("5562")) {
+			if (portStr.equals(activePorts.get(0).getPortNumber())) {
 				if (comparisonPredecessor < 0 || comparisonNode <= 0) {
 					// Log.d(TAG, "IN 1");
 					insertLocally(filename, value);
@@ -182,6 +183,10 @@ public class SimpleDhtProvider extends ContentProvider {
 
 			// Adding 5554 as the default active port
 			activePorts.add(portHashObject);
+			// Collections.sort(activePorts);
+			// sendPortUpdate(activePorts);
+			// new PortUpdateClientTask()
+			// .executeOnExecutor(AsyncTask.SERIAL_EXECUTOR);
 		}
 
 		return false;
@@ -220,11 +225,17 @@ public class SimpleDhtProvider extends ContentProvider {
 					Log.d(TAG, "Message Type:" + message.getMessageType());
 					// Log.d(TAG, "Inside server block");
 					if (message.getMessageType().equals(
+							MessageType.ACTIVE_PORTS_UPDATE)) {
+						if (!portStr.equals("5554")) {
+							activePorts = message.getActivePorts();
+							Log.d(TAG, "SIZE of Active ports received:"
+									+ activePorts.size());
+						}
+					} else if (message.getMessageType().equals(
 							MessageType.JOIN_REQUEST)) {
-						/*
-						 * Log.d(TAG, "Node join request from:" +
-						 * message.getSenderPort());
-						 */
+						Log.d(TAG,
+								"Node join request from:"
+										+ message.getSenderPort());
 						setPredecessorAndSuccessor(message.getSenderPort());
 					} else if (message.getMessageType().equals(
 							MessageType.NODE_PROPERTIES_MODIFICATION)) {
@@ -234,10 +245,10 @@ public class SimpleDhtProvider extends ContentProvider {
 						if (message.getSuccessor() != null) {
 							successor = message.getSuccessor();
 						}
-						/*
-						 * Log.v(TAG, "@@Predecessor:" + predecessor +
-						 * ",@@Sucessor:" + successor);
-						 */
+
+						Log.v(TAG, "@@Predecessor:" + predecessor
+								+ ",@@Sucessor:" + successor);
+
 					} else if (message.getMessageType().equals(
 							MessageType.INSERT)) {
 						/*
@@ -273,7 +284,7 @@ public class SimpleDhtProvider extends ContentProvider {
 									.getCursorMap());
 							resultReturned = true;
 
-						}else{
+						} else {
 							resultReturned = false;
 							Uri mUri = buildUri("content",
 									"edu.buffalo.cse.cse486586.simpledht.provider");
@@ -281,7 +292,7 @@ public class SimpleDhtProvider extends ContentProvider {
 									.getContentResolver();
 							mContentResolver.query(mUri, null, "*", null, null);
 						}
-						
+
 					} else if (message.getMessageType().equals(
 							MessageType.DELETE_REQUEST_ALL)) {
 						// TODO: Delete all the values from the local provider
@@ -306,7 +317,7 @@ public class SimpleDhtProvider extends ContentProvider {
 							// Unicast
 							Log.d(TAG, "Got result");
 							messageTypeFlag = MessageType.QUERY_RESPONSE;
-							cursorClient(resultCursor, null/*"singleQuery"*/);
+							cursorClient(resultCursor, null/* "singleQuery" */);
 
 						}
 					} else if (message.getMessageType().equals(
@@ -355,6 +366,7 @@ public class SimpleDhtProvider extends ContentProvider {
 				PortHashObject portHashObject = new PortHashObject(
 						joiningNodePort, genHash(joiningNodePort));
 				activePorts.add(portHashObject);
+
 			} catch (NoSuchAlgorithmException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
@@ -362,6 +374,9 @@ public class SimpleDhtProvider extends ContentProvider {
 
 			// Log.v(TAG, "Active port size after:" + activePorts.size());
 			Collections.sort(activePorts);
+			Log.d(TAG, "SIZE OF ACTIVE PORTs:" + activePorts.size());
+			new PortUpdateClientTask()
+					.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR);
 			for (int i = 0; i < activePorts.size(); i++) {
 				if (activePorts.get(i).getPortNumber().equals(joiningNodePort)) {
 					if (activePorts.size() > 2) {
@@ -410,6 +425,40 @@ public class SimpleDhtProvider extends ContentProvider {
 
 		}
 
+		private class PortUpdateClientTask extends
+				AsyncTask<String, Void, Void> {
+
+			@Override
+			protected Void doInBackground(String... arg0) {
+				Socket socket;
+				ObjectOutputStream objectOutputStream;
+				Message message = new Message();
+				message.setMessageType(MessageType.ACTIVE_PORTS_UPDATE);
+				message.setActivePorts(activePorts);
+				try {
+					for (int i = 0; i < activePorts.size(); i++) {
+						socket = new Socket(
+								InetAddress.getByAddress(new byte[] { 10, 0, 2,
+										2 }), Integer.parseInt(activePorts.get(
+										i).getPortNumber()) * 2);
+						objectOutputStream = new ObjectOutputStream(
+								socket.getOutputStream());
+						objectOutputStream.writeObject(message);
+						objectOutputStream.close();
+						socket.close();
+					}
+				} catch (UnknownHostException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+				return null;
+			}
+
+		}
+
 		private void notifyNode(String predecessor, String node,
 				String successor) {
 			Socket socket;
@@ -430,7 +479,7 @@ public class SimpleDhtProvider extends ContentProvider {
 						socket.getOutputStream());
 				objectOutputStream.writeObject(message);
 				objectOutputStream.close();
-				socket.close();
+//				socket.close();
 			} catch (UnknownHostException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
@@ -494,8 +543,8 @@ public class SimpleDhtProvider extends ContentProvider {
 
 			while (!allResponseReceived) {
 				// Wait until the response is received
-//				 Log.d(TAG, "Infinite");
-				if(resultReturned){
+				// Log.d(TAG, "Infinite");
+				if (resultReturned) {
 					break;
 				}
 			}
@@ -569,17 +618,20 @@ public class SimpleDhtProvider extends ContentProvider {
 		Object[] row = new Object[cursor.getColumnCount()];
 		StringBuffer value;
 		File[] files = getAllFiles();
-		for (int i = 0; i < files.length; i++) {
-			value = getValue(files[i].getName());
-			Log.d(TAG, "KEY,VALUE:" + files[i] + ":" + value);
+		if (files != null) {
+			for (int i = 0; i < files.length; i++) {
+				value = getValue(files[i].getName());
+				Log.d(TAG, "KEY,VALUE:" + files[i] + ":" + value);
 
-			row[cursor.getColumnIndex("key")] = files[i].getName();
-			row[cursor.getColumnIndex("value")] = value;
-			cursor.addRow(row);
+				row[cursor.getColumnIndex("key")] = files[i].getName();
+				row[cursor.getColumnIndex("value")] = value;
+				cursor.addRow(row);
+			}
+			// Log.d(TAG, "Fetched everything");
+			cursor.close();
+			Log.d(TAG, "Cursor Count from local:" + cursor.getCount());
+
 		}
-		// Log.d(TAG, "Fetched everything");
-		cursor.close();
-		Log.d(TAG, "Cursor Count from local:" + cursor.getCount());
 		return cursor;
 	}
 
@@ -749,7 +801,7 @@ public class SimpleDhtProvider extends ContentProvider {
 		message.setSenderPort(portStr);
 		if (allResponsePort != null) {
 			message.setResponsePort(allResponsePort);
-		} else /*if (("singleQuery").equals(allResponsePort))*/{
+		} else /* if (("singleQuery").equals(allResponsePort)) */{
 			message.setResponsePort(responsePort);
 		}
 

@@ -1,6 +1,7 @@
 package edu.buffalo.cse.cse486586.simpledht;
 
 import java.io.Serializable;
+import java.util.List;
 import java.util.Map;
 
 import android.database.Cursor;
@@ -17,6 +18,16 @@ public class Message implements Serializable {
 	String predecessor;
 	String successor;
 	
+	List<PortHashObject> activePorts;
+	
+	public List<PortHashObject> getActivePorts() {
+		return activePorts;
+	}
+
+	public void setActivePorts(List<PortHashObject> activePorts) {
+		this.activePorts = activePorts;
+	}
+
 	public String getPredecessor() {
 		return predecessor;
 	}
