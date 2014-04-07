@@ -51,6 +51,8 @@ public class SimpleDhtProvider extends ContentProvider {
 	private boolean resultReturned;
 	private String responsePort;
 
+	private boolean deleteResponseReceived;
+
 	// Variables for query
 	private MessageType messageTypeFlag;
 	private String selectionGlobal;
@@ -61,7 +63,38 @@ public class SimpleDhtProvider extends ContentProvider {
 
 	@Override
 	public int delete(Uri uri, String selection, String[] selectionArgs) {
-		// TODO Auto-generated method stub
+		if (selection.equals("*")) {
+
+		} else if (selection.equals("@")) {
+
+		} else {
+			if (isFileAvailable(selection)) {
+				responsePort = portStr;
+				Log.d(TAG, "File found and deleted:" + responsePort);
+				getContext().deleteFile(selection);
+				clientTask(portStr, MessageType.DELETE_REQUEST.toString(),
+						selection, responsePort);
+			} else {
+				/* Forward it to successor */
+				if (selectionArgs == null) {
+					responsePort = portStr;
+					messageTypeFlag = MessageType.DELETE_REQUEST;
+					selectionGlobal = selection;
+					sendRequest();
+
+					while (!deleteResponseReceived) {
+						// Wait until the response is received
+					}
+					// resetting it to false
+					deleteResponseReceived = false;
+					return 0;
+					// If carried over
+				} else if (selectionArgs != null) {
+					clientTask(portStr, MessageType.DELETE_REQUEST.toString(),
+							selection, responsePort);
+				}
+			}
+		}
 		return 0;
 	}
 
@@ -144,6 +177,7 @@ public class SimpleDhtProvider extends ContentProvider {
 	@Override
 	public boolean onCreate() {
 		queryResponseReceived = false;
+		deleteResponseReceived = false;
 		allResponseReceived = false;
 		resultReturned = false;
 		responsePort = null;
@@ -324,6 +358,23 @@ public class SimpleDhtProvider extends ContentProvider {
 							MessageType.DELETE_REQUEST)) {
 						// TODO: call delete of this avd
 						// If not found then ask the next successor.
+						Log.d(TAG,
+								"Request received from "
+										+ message.getSenderPort());
+						deleteResponseReceived = true;
+						if (!message.getResponsePort().equals(portStr)) {
+							Uri mUri = buildUri("content",
+									"edu.buffalo.cse.cse486586.simpledht.provider");
+							ContentResolver mContentResolver = getContext()
+									.getContentResolver();
+
+							responsePort = message.getResponsePort();
+							String[] selectionArray = { "carriedOver" };
+
+							mContentResolver.delete(mUri,
+									message.getSelection(), selectionArray);
+
+						}
 
 					} else if (message.getMessageType().equals(
 							MessageType.QUERY_RESPONSE)) {
@@ -479,7 +530,7 @@ public class SimpleDhtProvider extends ContentProvider {
 						socket.getOutputStream());
 				objectOutputStream.writeObject(message);
 				objectOutputStream.close();
-//				socket.close();
+				// socket.close();
 			} catch (UnknownHostException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
@@ -572,7 +623,7 @@ public class SimpleDhtProvider extends ContentProvider {
 					responsePort = portStr;
 					messageTypeFlag = MessageType.QUERY_REQUEST;
 					selectionGlobal = selection;
-					sendQuery();
+					sendRequest();
 
 					while (!queryResponseReceived) {
 						// Wait until the response is received
@@ -725,8 +776,7 @@ public class SimpleDhtProvider extends ContentProvider {
 		// denotes the file whose request is made
 
 		else if ((message.getMessageType().equals(MessageType.QUERY_REQUEST))
-				|| (message.getMessageType().equals(MessageType.DELETE_REQUEST
-						.toString()))) {
+				|| (message.getMessageType().equals(MessageType.DELETE_REQUEST))) {
 			message.setSelection(msgs[2]);
 			message.setResponsePort(msgs[3]);
 		}
@@ -749,7 +799,7 @@ public class SimpleDhtProvider extends ContentProvider {
 		// return null;
 	}
 
-	public void sendQuery() {
+	public void sendRequest() {
 		// Log.d(TAG, "Inside Send Query");
 		Socket socket = null;
 		ObjectOutputStream objectOutputStream;
@@ -764,7 +814,8 @@ public class SimpleDhtProvider extends ContentProvider {
 			socket = new Socket(InetAddress.getByAddress(new byte[] { 10, 0, 2,
 					2 }), Integer.parseInt(successor) * 2);
 
-			Log.d(TAG, "Type of message:" + message.getMessageType());
+			Log.d(TAG, "Type of message:" + message.getMessageType()
+					+ "sent to:" + successor);
 
 			objectOutputStream = new ObjectOutputStream(
 					socket.getOutputStream());
