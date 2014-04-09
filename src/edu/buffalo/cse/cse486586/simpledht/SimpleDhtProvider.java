@@ -31,10 +31,18 @@ import android.os.AsyncTask;
 import android.telephony.TelephonyManager;
 import android.util.Log;
 
+/**
+ * SimpleDhtProvider contains all the implementation code
+ * 
+ * @author ankitsul
+ * 
+ */
+
 public class SimpleDhtProvider extends ContentProvider {
 	static final String TAG = SimpleDhtProvider.class.getSimpleName();
 	static final int SERVER_PORT = 10000;
 
+	/* Constants for content provider table columns */
 	private static final String KEY_FIELD = "key";
 	private static final String VALUE_FIELD = "value";
 
@@ -46,14 +54,15 @@ public class SimpleDhtProvider extends ContentProvider {
 
 	List<PortHashObject> activePorts;
 
+	/* Used in implementation of query operation */
 	private boolean queryResponseReceived;
 	private boolean allResponseReceived;
 	private boolean resultReturned;
 	private String responsePort;
 
+	/* Used in implementation of delete operation */
 	private boolean deleteResponseReceived;
 
-	// Variables for query
 	private MessageType messageTypeFlag;
 	private String selectionGlobal;
 
@@ -64,13 +73,22 @@ public class SimpleDhtProvider extends ContentProvider {
 	@Override
 	public int delete(Uri uri, String selection, String[] selectionArgs) {
 		if (selection.equals("*")) {
+			responsePort = portStr;
+			messageTypeFlag = MessageType.DELETE_REQUEST_ALL;
+			deleteLocalFiles();
+			cursorClient(null, null);
+			while (!deleteResponseReceived) {
+				// Wait until the response is received
+			}
+			// resetting it to false
+			deleteResponseReceived = false;
+			return 0;
 
 		} else if (selection.equals("@")) {
-
+			deleteLocalFiles();
 		} else {
 			if (isFileAvailable(selection)) {
 				responsePort = portStr;
-				Log.d(TAG, "File found and deleted:" + responsePort);
 				getContext().deleteFile(selection);
 				clientTask(portStr, MessageType.DELETE_REQUEST.toString(),
 						selection, responsePort);
@@ -88,7 +106,7 @@ public class SimpleDhtProvider extends ContentProvider {
 					// resetting it to false
 					deleteResponseReceived = false;
 					return 0;
-					// If carried over
+					// If carried over request
 				} else if (selectionArgs != null) {
 					clientTask(portStr, MessageType.DELETE_REQUEST.toString(),
 							selection, responsePort);
@@ -96,6 +114,16 @@ public class SimpleDhtProvider extends ContentProvider {
 			}
 		}
 		return 0;
+	}
+
+	/** Method to delete all files from the content provider */
+	private void deleteLocalFiles() {
+		File[] files = getAllFiles();
+		if (files != null) {
+			for (int i = 0; i < files.length; i++) {
+				getContext().deleteFile(files[i].toString());
+			}
+		}
 	}
 
 	@Override
@@ -107,14 +135,11 @@ public class SimpleDhtProvider extends ContentProvider {
 	@Override
 	public Uri insert(Uri uri, ContentValues values) {
 		Log.v("insert", values.toString());
-		/* Log.v(TAG, "Predecessor:" + predecessor + ",Sucessor:" + successor); */
 		String filename = null;
 		filename = values.getAsString("key");
 
 		String value = values.getAsString("value");
-		// insertLocally(filename, value);
 		// Check before inserting if it is the right place to insert
-		// In case where only this avd is active
 		if (successor.equals(portStr) && predecessor.equals(portStr)) {
 			insertLocally(filename, value);
 			return null;
@@ -125,18 +150,17 @@ public class SimpleDhtProvider extends ContentProvider {
 				comparisonPredecessor = genHash(predecessor).compareTo(
 						genHash(filename));
 				comparisonNode = genHash(filename).compareTo(genHash(portStr));
-			} catch (NoSuchAlgorithmException e1) {
-				e1.printStackTrace();
+			} catch (NoSuchAlgorithmException e) {
+				Log.e(TAG,
+						"No such algorithm exception while creating SHA1 hash:"
+								+ e.getMessage());
 			}
 			// To handle the wrapped DHT
-			// if (portStr.equals("5562")) {
 			if (portStr.equals(activePorts.get(0).getPortNumber())) {
 				if (comparisonPredecessor < 0 || comparisonNode <= 0) {
-					// Log.d(TAG, "IN 1");
 					insertLocally(filename, value);
 				} else {
 					/* Forward it to successor */
-					// Log.d(TAG, "IN 2");
 					moveToSucessor(values);
 				}
 			} else {
@@ -152,6 +176,7 @@ public class SimpleDhtProvider extends ContentProvider {
 		return null;
 	}
 
+	/** Method to insert key locally */
 	private void insertLocally(String filename, String value) {
 		Log.d(TAG, "Value inserted locally:" + filename + ":" + value);
 		try {
@@ -165,6 +190,7 @@ public class SimpleDhtProvider extends ContentProvider {
 		}
 	}
 
+	/** Method to move the request to the successor */
 	private void moveToSucessor(ContentValues values) {
 		Log.d(TAG,
 				"Value moved to successor:" + successor + ":"
@@ -198,39 +224,34 @@ public class SimpleDhtProvider extends ContentProvider {
 			new ServerTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR,
 					serverSocket);
 		} catch (IOException e) {
-			e.printStackTrace();
+			Log.e(TAG,
+					"IO Exception while creating server socket:"
+							+ e.getMessage());
 		}
+
 		PortHashObject portHashObject = null;
 		try {
 			portHashObject = new PortHashObject(portStr, genHash(portStr));
 		} catch (NoSuchAlgorithmException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			Log.e(TAG, "No such algorithm exception while creating SHA1 hash:"
+					+ e.getMessage());
 		}
 
 		if (!portStr.equals("5554")) {
-
 			new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR,
 					MessageType.JOIN_REQUEST.toString());
-			// setPredecessorAndSuccessor();
 		} else {
-
 			// Adding 5554 as the default active port
 			activePorts.add(portHashObject);
-			// Collections.sort(activePorts);
-			// sendPortUpdate(activePorts);
-			// new PortUpdateClientTask()
-			// .executeOnExecutor(AsyncTask.SERIAL_EXECUTOR);
 		}
-
 		return false;
 	}
 
+	/** Class for asynchronous Server task */
 	private class ServerTask extends AsyncTask<ServerSocket, String, Void> {
 		@Override
 		protected Void doInBackground(ServerSocket... sockets) {
 			ServerSocket serverSocket = sockets[0];
-
 			try {
 				readMessage(serverSocket);
 			} catch (IOException e) {
@@ -245,6 +266,7 @@ public class SimpleDhtProvider extends ContentProvider {
 			return null;
 		}
 
+		/** Method to read message from the stream */
 		private void readMessage(ServerSocket serverSocket) throws IOException,
 				ClassNotFoundException {
 			Message message = null;
@@ -257,13 +279,10 @@ public class SimpleDhtProvider extends ContentProvider {
 
 				if (null != message) {
 					Log.d(TAG, "Message Type:" + message.getMessageType());
-					// Log.d(TAG, "Inside server block");
 					if (message.getMessageType().equals(
 							MessageType.ACTIVE_PORTS_UPDATE)) {
 						if (!portStr.equals("5554")) {
 							activePorts = message.getActivePorts();
-							Log.d(TAG, "SIZE of Active ports received:"
-									+ activePorts.size());
 						}
 					} else if (message.getMessageType().equals(
 							MessageType.JOIN_REQUEST)) {
@@ -279,16 +298,8 @@ public class SimpleDhtProvider extends ContentProvider {
 						if (message.getSuccessor() != null) {
 							successor = message.getSuccessor();
 						}
-
-						Log.v(TAG, "@@Predecessor:" + predecessor
-								+ ",@@Sucessor:" + successor);
-
 					} else if (message.getMessageType().equals(
 							MessageType.INSERT)) {
-						/*
-						 * Log.d(TAG, "Value received:" + message.getKey() + ":"
-						 * + message.getValue());
-						 */
 						// Create ContentValues object with the key and value
 						// and then call insert() of this node
 						ContentValues mContentValues = new ContentValues();
@@ -304,20 +315,18 @@ public class SimpleDhtProvider extends ContentProvider {
 						// Add the local cursor value to the message and pass it
 						// to the successor
 						responsePort = message.getResponsePort();
-						Log.d(TAG, "RESPONSE PORT:" + message.getResponsePort());
 						if (message.getCursorMap() != null) {
-							Log.d(TAG, "Cursor map size:"
-									+ message.getCursorMap().size());
 							partialResultCursor = convertMapToCursor(message
 									.getCursorMap());
 						}
 						allResponseReceived = true;
+
+						// Case where the response port is same as the current
+						// port.
 						if (message.getResponsePort().equals(portStr)) {
-							Log.d(TAG, "MSG2");
 							resultCursorAll = convertMapToCursor(message
 									.getCursorMap());
 							resultReturned = true;
-
 						} else {
 							resultReturned = false;
 							Uri mUri = buildUri("content",
@@ -326,10 +335,19 @@ public class SimpleDhtProvider extends ContentProvider {
 									.getContentResolver();
 							mContentResolver.query(mUri, null, "*", null, null);
 						}
-
 					} else if (message.getMessageType().equals(
 							MessageType.DELETE_REQUEST_ALL)) {
-						// TODO: Delete all the values from the local provider
+						deleteResponseReceived = true;
+						if (!message.getResponsePort().equals(portStr)) {
+							Uri mUri = buildUri("content",
+									"edu.buffalo.cse.cse486586.simpledht.provider");
+							ContentResolver mContentResolver = getContext()
+									.getContentResolver();
+
+							responsePort = message.getResponsePort();
+							mContentResolver.delete(mUri, "*", null);
+
+						}
 					} else if (message.getMessageType().equals(
 							MessageType.QUERY_REQUEST)) {
 						Log.d(TAG,
@@ -347,17 +365,13 @@ public class SimpleDhtProvider extends ContentProvider {
 
 						// Checking if the cursor is not empty
 						if (resultCursor != null && resultCursor.getCount() > 0) {
-							// Send the result back to "myPortReceived" -
-							// Unicast
-							Log.d(TAG, "Got result");
+							// Unicast the result back to "responsePort"
 							messageTypeFlag = MessageType.QUERY_RESPONSE;
-							cursorClient(resultCursor, null/* "singleQuery" */);
-
+							cursorClient(resultCursor, null);
 						}
 					} else if (message.getMessageType().equals(
 							MessageType.DELETE_REQUEST)) {
-						// TODO: call delete of this avd
-						// If not found then ask the next successor.
+						// If not found then ask the successor.
 						Log.d(TAG,
 								"Request received from "
 										+ message.getSenderPort());
@@ -375,95 +389,67 @@ public class SimpleDhtProvider extends ContentProvider {
 									message.getSelection(), selectionArray);
 
 						}
-
 					} else if (message.getMessageType().equals(
 							MessageType.QUERY_RESPONSE)) {
-						// Receive all the query response
-						// Set a flag to determine whether it was a single
-						// response or from all the avds (in case of *)
-						Log.d(TAG, "Received response");
-						/*
-						 * for (Map.Entry<String, String> entry : message
-						 * .getCursorMap().entrySet()) { Log.d(TAG, "KKey : " +
-						 * entry.getKey() + " VValue : " + entry.getValue()); }
-						 */
 						responseCursor = convertMapToCursor(message
 								.getCursorMap());
-						// Log.d(TAG, "Response Cursor");
-						while (responseCursor.moveToNext()) {
-							Log.d(TAG,
-									"Response Cursor:"
-											+ responseCursor.getString(responseCursor
-													.getColumnIndex("key"))
-											+ responseCursor.getString(responseCursor
-													.getColumnIndex("value")));
-						}
 						queryResponseReceived = true;
-						/*
-						 * Log.d(TAG, "Query response Value:" +
-						 * queryResponseReceived);
-						 */
 					}
 				}
 			}
 		}
 
+		/** Method to update the successor and predecessor pointers */
 		private void setPredecessorAndSuccessor(String joiningNodePort) {
 			String nodeToModify;
 			String predecessor;
 			String successor;
-			// Log.v(TAG, "Active port size before:" + activePorts.size());
 			try {
 				PortHashObject portHashObject = new PortHashObject(
 						joiningNodePort, genHash(joiningNodePort));
 				activePorts.add(portHashObject);
 
 			} catch (NoSuchAlgorithmException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+				Log.e(TAG,
+						"No such algorithm exception while creating SHA1 hash:"
+								+ e.getMessage());
 			}
 
-			// Log.v(TAG, "Active port size after:" + activePorts.size());
+			// Sorting the ports according to the hash values
 			Collections.sort(activePorts);
-			Log.d(TAG, "SIZE OF ACTIVE PORTs:" + activePorts.size());
+
 			new PortUpdateClientTask()
 					.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR);
 			for (int i = 0; i < activePorts.size(); i++) {
 				if (activePorts.get(i).getPortNumber().equals(joiningNodePort)) {
 					if (activePorts.size() > 2) {
 						if (i == 0) {
-							// Log.v(TAG, "SETTING 1");
 							predecessor = activePorts.get(
 									activePorts.size() - 1).getPortNumber();
 							nodeToModify = activePorts.get(i).getPortNumber();
 							successor = activePorts.get(i + 1).getPortNumber();
 						} else if (i == (activePorts.size() - 1)) {
-							// Log.v(TAG, "SETTING 2");
 							predecessor = activePorts.get(i - 1)
 									.getPortNumber();
 							nodeToModify = activePorts.get(i).getPortNumber();
 							successor = activePorts.get(0).getPortNumber();
 						} else {
-							// Log.v(TAG, "SETTING 3");
 							predecessor = activePorts.get(i - 1)
 									.getPortNumber();
 							nodeToModify = activePorts.get(i).getPortNumber();
 							successor = activePorts.get(i + 1).getPortNumber();
 						}
-						// Update the affected nodes
 						notifyNode(null, predecessor, nodeToModify);
 						notifyNode(predecessor, nodeToModify, successor);
 						notifyNode(nodeToModify, successor, null);
 					} else if (activePorts.size() == 2) {
 						if (i == 0) {
-							// Log.v(TAG, "SETTING 11");
 							predecessor = activePorts.get(
 									activePorts.size() - 1).getPortNumber();
 							nodeToModify = activePorts.get(i).getPortNumber();
 							successor = activePorts.get(activePorts.size() - 1)
 									.getPortNumber();
 						} else {
-							// Log.v(TAG, "SETTING 12");
 							predecessor = activePorts.get(0).getPortNumber();
 							nodeToModify = activePorts.get(i).getPortNumber();
 							successor = activePorts.get(0).getPortNumber();
@@ -473,9 +459,12 @@ public class SimpleDhtProvider extends ContentProvider {
 					}
 				}
 			}
-
 		}
 
+		/**
+		 * Class to update the node's successor and predecessor in case a new
+		 * node join
+		 */
 		private class PortUpdateClientTask extends
 				AsyncTask<String, Void, Void> {
 
@@ -499,17 +488,19 @@ public class SimpleDhtProvider extends ContentProvider {
 						socket.close();
 					}
 				} catch (UnknownHostException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
+					Log.e(TAG,
+							"Host not known exception while creating socket:"
+									+ e.getMessage());
 				} catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
+					Log.e(TAG,
+							"IO Exception while creating socket:"
+									+ e.getMessage());
 				}
 				return null;
 			}
-
 		}
 
+		/** Method to handle node join */
 		private void notifyNode(String predecessor, String node,
 				String successor) {
 			Socket socket;
@@ -521,26 +512,23 @@ public class SimpleDhtProvider extends ContentProvider {
 			message.setPredecessor(predecessor);
 			message.setSuccessor(successor);
 
-			// if (message.getMessageType().equals(MessageType.JOIN_REQUEST)) {
 			try {
-				// Log.d(TAG, "Sending Node modify request");
 				socket = new Socket(InetAddress.getByAddress(new byte[] { 10,
 						0, 2, 2 }), Integer.parseInt(node) * 2);
 				objectOutputStream = new ObjectOutputStream(
 						socket.getOutputStream());
 				objectOutputStream.writeObject(message);
 				objectOutputStream.close();
-				// socket.close();
 			} catch (UnknownHostException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+				Log.e(TAG, "Host not known exception while creating socket:"
+						+ e.getMessage());
 			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+				Log.e(TAG,
+						"IO Exception while creating socket:" + e.getMessage());
 			}
-			// }
 		}
 
+		/** Method to create the Uri for the content provider */
 		private Uri buildUri(String scheme, String authority) {
 			Uri.Builder uriBuilder = new Uri.Builder();
 			uriBuilder.authority(authority);
@@ -548,6 +536,7 @@ public class SimpleDhtProvider extends ContentProvider {
 			return uriBuilder.build();
 		}
 
+		/** Method to convert Map into a Cursor object */
 		private MatrixCursor convertMapToCursor(Map<String, String> cursorMap) {
 			String[] columns = { "key", "value" };
 			MatrixCursor cursor = new MatrixCursor(columns);
@@ -576,17 +565,15 @@ public class SimpleDhtProvider extends ContentProvider {
 		if (selection.equals("*")) {
 			String allResponsePort = null;
 			if (successor.equals(portStr) && predecessor.equals(portStr)) {
-				// Log.d(TAG, "Inside *");
 				return getLocalCursor(columns);
 			}
 			if (!allResponseReceived) {
 				allResponsePort = portStr;
 			}
 			messageTypeFlag = MessageType.QUERY_REQUEST_ALL;
-			// Adding the requester own cursor
+			// Appending requester's own cursor
 			MatrixCursor localCursor = getLocalCursor(columns);
 			MatrixCursor finalCursor = concat(partialResultCursor, localCursor);
-			// sendQuery();
 			partialResultCursor = null;
 			if (!resultReturned) {
 				cursorClient(finalCursor, allResponsePort);
@@ -594,7 +581,6 @@ public class SimpleDhtProvider extends ContentProvider {
 
 			while (!allResponseReceived) {
 				// Wait until the response is received
-				// Log.d(TAG, "Infinite");
 				if (resultReturned) {
 					break;
 				}
@@ -603,7 +589,6 @@ public class SimpleDhtProvider extends ContentProvider {
 			allResponseReceived = false;
 			resultReturned = false;
 			return resultCursorAll;
-
 		} else if (selection.equals("@")) {
 			return getLocalCursor(columns);
 		} else {
@@ -616,9 +601,6 @@ public class SimpleDhtProvider extends ContentProvider {
 				return cursor;
 			} else if (!isFileAvailable(selection)) {
 				/* Forward it to successor */
-				// Checks if the query is a fresh one, myPortAlreadySet will
-				// be false.
-
 				if (sortOrder == null) {
 					responsePort = portStr;
 					messageTypeFlag = MessageType.QUERY_REQUEST;
@@ -631,19 +613,20 @@ public class SimpleDhtProvider extends ContentProvider {
 					// resetting it to false
 					queryResponseReceived = false;
 					return responseCursor;
-					// If carried over
+					// If carried over request
 				} else if (sortOrder.equals("carriedOver")) {
 					clientTask(portStr, MessageType.QUERY_REQUEST.toString(),
 							selection, responsePort);
 				}
-				// return responseCursor;
-
 			}
 		}
-
 		return null;
 	}
 
+	/**
+	 * Method to concatenate the local cursor with the received cursor from the
+	 * predecessor
+	 */
 	private MatrixCursor concat(MatrixCursor partialResultCursor,
 			MatrixCursor localCursor) {
 		if (null == partialResultCursor) {
@@ -664,6 +647,10 @@ public class SimpleDhtProvider extends ContentProvider {
 		return result;
 	}
 
+	/**
+	 * Method to retrieve the cursor object containing all the data from the
+	 * content provider
+	 */
 	private MatrixCursor getLocalCursor(String[] columns) {
 		MatrixCursor cursor = new MatrixCursor(columns);
 		Object[] row = new Object[cursor.getColumnCount()];
@@ -678,25 +665,25 @@ public class SimpleDhtProvider extends ContentProvider {
 				row[cursor.getColumnIndex("value")] = value;
 				cursor.addRow(row);
 			}
-			// Log.d(TAG, "Fetched everything");
 			cursor.close();
-			Log.d(TAG, "Cursor Count from local:" + cursor.getCount());
-
 		}
 		return cursor;
 	}
 
+	/** Method to retrieve all the files from the content provider */
 	private File[] getAllFiles() {
 		File currentDir = new File(System.getProperty("user.dir")
 				+ "data/data/edu.buffalo.cse.cse486586.simpledht/files");
 		return currentDir.listFiles();
 	}
 
+	/** Method to check if the requested key is present in the content provider */
 	private boolean isFileAvailable(String filename) {
 		File file = getContext().getFileStreamPath(filename);
 		return file.exists();
 	}
 
+	/** Method to retrieve the value corresponding to the requested key */
 	private StringBuffer getValue(String selection) {
 		int ch;
 		StringBuffer value = new StringBuffer();
@@ -709,9 +696,9 @@ public class SimpleDhtProvider extends ContentProvider {
 			}
 			fileInputStream.close();
 		} catch (FileNotFoundException e) {
-			e.printStackTrace();
+			Log.e(TAG, "File not found exception:" + e.getMessage());
 		} catch (IOException e) {
-			e.printStackTrace();
+			Log.e(TAG, "IO Exception while creating socket:" + e.getMessage());
 		}
 		return value;
 	}
@@ -723,9 +710,8 @@ public class SimpleDhtProvider extends ContentProvider {
 		return 0;
 	}
 
-	/* To send node join request */
+	/** Method to send node join request to node 5554 */
 	private class ClientTask extends AsyncTask<String, Void, Void> {
-
 		@Override
 		protected Void doInBackground(String... msgs) {
 			Socket socket;
@@ -735,7 +721,6 @@ public class SimpleDhtProvider extends ContentProvider {
 			message.setSenderPort(portStr);
 			if (message.getMessageType().equals(MessageType.JOIN_REQUEST)) {
 				try {
-					// Log.d(TAG, "Sending Node join request");
 					socket = new Socket(InetAddress.getByAddress(new byte[] {
 							10, 0, 2, 2 }), 5554 * 2);
 					objectOutputStream = new ObjectOutputStream(
@@ -744,18 +729,20 @@ public class SimpleDhtProvider extends ContentProvider {
 					objectOutputStream.close();
 					socket.close();
 				} catch (UnknownHostException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
+					Log.e(TAG,
+							"Host not known exception while creating socket:"
+									+ e.getMessage());
 				} catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
+					Log.e(TAG,
+							"IO Exception while creating socket:"
+									+ e.getMessage());
 				}
 			}
 			return null;
-
 		}
 	}
 
+	/** Method to send INSERT, QUERY_REQUEST and DELETE_REQUEST to the successor */
 	private void clientTask(String... msgs) {
 		Socket socket = null;
 		ObjectOutputStream objectOutputStream;
@@ -766,16 +753,9 @@ public class SimpleDhtProvider extends ContentProvider {
 		message.setMessageType(MessageType.valueOf(msgs[1]));
 
 		if (message.getMessageType().equals(MessageType.INSERT)) {
-			// Log.d(TAG, "ENUM VALUE:" + message.getMessageType());
 			message.setKey(msgs[2]);
 			message.setValue(msgs[3]);
-			Log.d(TAG, "Message Sent:" + msgs[0] + ":" + successor + ":"
-					+ msgs[2] + ":" + msgs[3]);
-		}
-		// Message type is QUERY_REQUEST or DELETE_REQUEST, selection
-		// denotes the file whose request is made
-
-		else if ((message.getMessageType().equals(MessageType.QUERY_REQUEST))
+		} else if ((message.getMessageType().equals(MessageType.QUERY_REQUEST))
 				|| (message.getMessageType().equals(MessageType.DELETE_REQUEST))) {
 			message.setSelection(msgs[2]);
 			message.setResponsePort(msgs[3]);
@@ -784,23 +764,18 @@ public class SimpleDhtProvider extends ContentProvider {
 		try {
 			socket = new Socket(InetAddress.getByAddress(new byte[] { 10, 0, 2,
 					2 }), Integer.parseInt(successor) * 2);
-
-			Log.d(TAG, "Type of message:" + msgs[1]);
-
 			objectOutputStream = new ObjectOutputStream(
 					socket.getOutputStream());
 			objectOutputStream.writeObject(message);
 			objectOutputStream.close();
 			socket.close();
 		} catch (IOException e) {
-			e.printStackTrace();
+			Log.e(TAG, "IO Exception while creating socket:" + e.getMessage());
 		}
-
-		// return null;
 	}
 
+	/** Method to send request to the successor */
 	public void sendRequest() {
-		// Log.d(TAG, "Inside Send Query");
 		Socket socket = null;
 		ObjectOutputStream objectOutputStream;
 		Message message = new Message();
@@ -813,21 +788,17 @@ public class SimpleDhtProvider extends ContentProvider {
 		try {
 			socket = new Socket(InetAddress.getByAddress(new byte[] { 10, 0, 2,
 					2 }), Integer.parseInt(successor) * 2);
-
-			Log.d(TAG, "Type of message:" + message.getMessageType()
-					+ "sent to:" + successor);
-
 			objectOutputStream = new ObjectOutputStream(
 					socket.getOutputStream());
 			objectOutputStream.writeObject(message);
 			objectOutputStream.close();
 			socket.close();
 		} catch (IOException e) {
-			e.printStackTrace();
+			Log.e(TAG, "IO Exception while creating socket:" + e.getMessage());
 		}
-
 	}
 
+	/** Method to generate SHA-1 hash value */
 	private String genHash(String input) throws NoSuchAlgorithmException {
 		MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
 		byte[] sha1Hash = sha1.digest(input.getBytes());
@@ -838,32 +809,34 @@ public class SimpleDhtProvider extends ContentProvider {
 		return formatter.toString();
 	}
 
+	/** Method to handle QUERY_REQUEST_ALL and DELETE_REQUEST_ALL */
 	public void cursorClient(Cursor cursor, String allResponsePort) {
-		// Unicast to "myPortReceived"
 		Socket socket = null;
 		ObjectOutputStream objectOutputStream;
 		String destinationPort = responsePort;
 
 		Message message = new Message();
-		Log.d(TAG, "Cursor size while sending:" + cursor.getCount());
-		Map<String, String> cursorMap = convertCursorToMap(cursor);
-		Log.d(TAG, "Cursor Map size while sending:" + cursorMap.size());
+		Map<String, String> cursorMap = null;
+		if (null != cursor) {
+			cursorMap = convertCursorToMap(cursor);
+		}
+
 		message.setCursorMap(cursorMap);
 		message.setSenderPort(portStr);
 		if (allResponsePort != null) {
 			message.setResponsePort(allResponsePort);
-		} else /* if (("singleQuery").equals(allResponsePort)) */{
+		} else {
 			message.setResponsePort(responsePort);
 		}
 
 		message.setMessageType(messageTypeFlag);
 
-		if (messageTypeFlag.equals(MessageType.QUERY_REQUEST_ALL)) {
+		if (messageTypeFlag.equals(MessageType.QUERY_REQUEST_ALL)
+				|| messageTypeFlag.equals(MessageType.DELETE_REQUEST_ALL)) {
 			destinationPort = successor;
 		}
 
 		try {
-			Log.d(TAG, "QUERY_ALL request sent:" + destinationPort);
 			socket = new Socket(InetAddress.getByAddress(new byte[] { 10, 0, 2,
 					2 }), Integer.parseInt(destinationPort) * 2);
 
@@ -871,15 +844,12 @@ public class SimpleDhtProvider extends ContentProvider {
 					socket.getOutputStream());
 			objectOutputStream.writeObject(message);
 			objectOutputStream.close();
-			// socket.close();
-
-			// responsePort = null;
 		} catch (IOException e) {
-			e.printStackTrace();
+			Log.e(TAG, "IO Exception while creating socket:" + e.getMessage());
 		}
-
 	}
 
+	/** Method to convert Cursor to a Map */
 	private Map<String, String> convertCursorToMap(Cursor cursor) {
 		Map<String, String> cursorMap = new HashMap<String, String>();
 		while (cursor.moveToNext()) {
@@ -888,5 +858,4 @@ public class SimpleDhtProvider extends ContentProvider {
 		}
 		return cursorMap;
 	}
-
 }
